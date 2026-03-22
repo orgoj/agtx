@@ -2382,14 +2382,16 @@ impl App {
                 let (tx, rx) = mpsc::channel();
                 self.state.pr_generation_rx = Some(rx);
 
+                // Use effective path: worktree if set, else project root (no-worktree mode)
+                let effective_path_for_thread = worktree_path.clone()
+                    .or_else(|| self.state.project_path.as_ref().map(|p| p.to_string_lossy().into_owned()));
                 let title_for_thread = task_title.clone();
-                let worktree_for_thread = worktree_path.clone();
                 let git_ops = Arc::clone(&self.state.git_ops);
                 let agent_ops = self.state.agent_registry.get(&self.state.config.default_agent);
                 std::thread::spawn(move || {
                     let (pr_title, pr_body) = generate_pr_description(
                         &title_for_thread,
-                        worktree_for_thread.as_deref(),
+                        effective_path_for_thread.as_deref(),
                         None,
                         git_ops.as_ref(),
                         agent_ops.as_ref(),
@@ -3629,15 +3631,16 @@ impl App {
 
     fn show_task_diff(&mut self) -> Result<()> {
         if let Some(task) = self.state.board.selected_task() {
-            let diff_content = if let Some(worktree_path) = &task.worktree_path {
+            let diff_content = if let Some(project_path) = &self.state.project_path {
+                let effective = effective_task_path(task, project_path);
                 let mut exclude_prefixes: Vec<&str> = crate::git::AGENT_CONFIG_DIRS.to_vec();
                 let plugin = self.load_task_plugin(task);
                 let plugin_dirs: Vec<String> = plugin.map_or_else(Vec::new, |p| p.copy_dirs.clone());
                 let plugin_dir_refs: Vec<&str> = plugin_dirs.iter().map(|s| s.as_str()).collect();
                 exclude_prefixes.extend(plugin_dir_refs);
-                collect_task_diff(worktree_path, self.state.git_ops.as_ref(), &exclude_prefixes)
+                collect_task_diff(&effective.to_string_lossy(), self.state.git_ops.as_ref(), &exclude_prefixes)
             } else {
-                "(task has no worktree yet)".to_string()
+                "(no project path)".to_string()
             };
 
             self.state.diff_popup = Some(DiffPopup {
