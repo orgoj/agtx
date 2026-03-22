@@ -382,6 +382,14 @@ impl MergedConfig {
     }
 }
 
+/// Shell hooks run at lifecycle events for a plugin.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PluginHooks {
+    /// Shell command run when a task transitions to Done.
+    /// Supports {task}, {task_id}, {external_id} placeholders (shell-escaped).
+    pub done: Option<String>,
+}
+
 /// Workflow plugin configuration loaded from plugin.toml
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowPlugin {
@@ -418,6 +426,9 @@ pub struct WorkflowPlugin {
     /// Each rule specifies patterns to detect and keystrokes to send in response.
     #[serde(default)]
     pub auto_dismiss: Vec<AutoDismiss>,
+    /// Shell hooks run at lifecycle events.
+    #[serde(default)]
+    pub hooks: PluginHooks,
 }
 
 /// Rule for auto-dismissing interactive prompts in the tmux pane.

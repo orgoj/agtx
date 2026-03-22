@@ -1888,6 +1888,7 @@ fn test_resolve_skill_command_with_plugin() {
         cyclic: false,
         copy_back: std::collections::HashMap::new(),
         auto_dismiss: vec![],
+        hooks: Default::default(),
     });
     // Claude/Gemini: canonical form unchanged
     assert_eq!(resolve_skill_command(&plugin, "planning", "claude", "", 1), Some("/gsd:plan-phase 1".to_string()));
@@ -1923,6 +1924,7 @@ fn test_plugin_supports_agent() {
         cyclic: false,
         copy_back: std::collections::HashMap::new(),
         auto_dismiss: vec![],
+        hooks: Default::default(),
     };
     assert!(plugin.supports_agent("claude"));
     assert!(plugin.supports_agent("copilot"));
@@ -1943,6 +1945,7 @@ fn test_plugin_supports_agent() {
         cyclic: false,
         copy_back: std::collections::HashMap::new(),
         auto_dismiss: vec![],
+        hooks: Default::default(),
     };
     assert!(plugin.supports_agent("claude"));
     assert!(plugin.supports_agent("codex"));
@@ -2014,6 +2017,7 @@ fn test_phase_artifact_exists_with_glob() {
         cyclic: false,
         copy_back: std::collections::HashMap::new(),
         auto_dismiss: vec![],
+        hooks: Default::default(),
     });
 
     let worktree = tmp.to_string_lossy().to_string();
@@ -2297,6 +2301,7 @@ fn test_resolve_prompt_trigger_with_gsd() {
         cyclic: false,
         copy_back: std::collections::HashMap::new(),
         auto_dismiss: vec![],
+        hooks: Default::default(),
     });
     assert_eq!(
         resolve_prompt_trigger(&plugin, "research"),
@@ -2335,6 +2340,7 @@ fn test_resolve_prompt_trigger_empty_string_filtered() {
         cyclic: false,
         copy_back: std::collections::HashMap::new(),
         auto_dismiss: vec![],
+        hooks: Default::default(),
     });
     // Empty strings should be filtered out
     assert_eq!(resolve_prompt_trigger(&plugin, "research"), None);

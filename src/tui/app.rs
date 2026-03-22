@@ -255,6 +255,8 @@ struct AppState {
     orchestrator_last_check: Instant,
     // Background session refresh channel (non-blocking phase status polling)
     session_refresh_rx: Option<mpsc::Receiver<SessionRefreshResult>>,
+    // Background done-hook result channel
+    done_hook_rx: Option<mpsc::Receiver<Result<(), String>>>,
 }
 
 /// State for confirming move to Done
@@ -567,6 +569,7 @@ impl App {
                 orchestrator_stable_since: None,
                 orchestrator_last_check: Instant::now(),
                 session_refresh_rx: None,
+                done_hook_rx: None,
             },
         };
 
@@ -717,6 +720,7 @@ impl App {
                 orchestrator_stable_since: None,
                 orchestrator_last_check: Instant::now(),
                 session_refresh_rx: None,
+                done_hook_rx: None,
             },
         })
     }
@@ -758,6 +762,16 @@ impl App {
                     }
                     self.state.pr_creation_rx = None;
                     self.refresh_tasks()?;
+                }
+            }
+
+            // Check for done-hook completion
+            if let Some(ref rx) = self.state.done_hook_rx {
+                if let Ok(result) = rx.try_recv() {
+                    self.state.done_hook_rx = None;
+                    if let Err(err) = result {
+                        self.state.warning_message = Some((format!("Done hook failed: {}", err), Instant::now()));
+                    }
                 }
             }
 
@@ -2287,6 +2301,14 @@ impl App {
                 task.updated_at = chrono::Utc::now();
                 db.update_task(&task)?;
                 self.refresh_tasks()?;
+
+                // Run done hook (best-effort, async)
+                if let Some(plugin) = self.load_task_plugin(&task) {
+                    if let Some(ref hook) = plugin.hooks.done {
+                        let cwd = effective_task_path(&task, &project_path);
+                        self.state.done_hook_rx = Some(spawn_done_hook(hook, &task, cwd));
+                    }
+                }
 
                 // Cleanup in background (archive, kill tmux, remove worktree)
                 let tmux_ops = Arc::clone(&self.state.tmux_ops);
@@ -3887,6 +3909,14 @@ impl App {
             return Ok(true);
         }
 
+        // Run done hook (best-effort, async)
+        if let Some(plugin) = self.load_task_plugin(task) {
+            if let Some(ref hook) = plugin.hooks.done {
+                let cwd = effective_task_path(task, project_path);
+                self.state.done_hook_rx = Some(spawn_done_hook(hook, task, cwd));
+            }
+        }
+
         // Clean — spawn background cleanup
         let session_name = task.session_name.clone();
         let worktree_path = task.worktree_path.clone();
@@ -5210,6 +5240,38 @@ fn cleanup_task_for_done(
     task.worktree_path = None;
     task.status = TaskStatus::Done;
     task.updated_at = chrono::Utc::now();
+}
+
+/// Run the plugin done_hook in the background, substituting placeholders with shell-escaped values.
+/// Returns a channel receiver that yields Ok(()) on success or Err(message) on failure.
+fn spawn_done_hook(
+    hook_script: &str,
+    task: &Task,
+    cwd: &Path,
+) -> mpsc::Receiver<Result<(), String>> {
+    let script = hook_script
+        .replace("{task}", &crate::skills::shell_escape(&task.content_text()))
+        .replace("{task_id}", &crate::skills::shell_escape(&task.id))
+        .replace("{external_id}", &crate::skills::shell_escape(task.external_id.as_deref().unwrap_or("")));
+    let cwd = cwd.to_path_buf();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&script)
+            .current_dir(&cwd)
+            .output();
+        let send_result = match result {
+            Ok(o) if o.status.success() => Ok(()),
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                Err(format!("exit {}: {}", o.status.code().unwrap_or(-1), stderr.trim()))
+            }
+            Err(e) => Err(e.to_string()),
+        };
+        let _ = tx.send(send_result);
+    });
+    rx
 }
 
 /// Background-safe cleanup: archive artifacts, kill tmux window, remove worktree.
