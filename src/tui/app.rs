@@ -3715,6 +3715,7 @@ impl App {
         let project_name = self.state.project_name.clone();
         let copy_files = self.state.config.copy_files.clone();
         let init_script = self.state.config.init_script.clone();
+        let worktree_enabled = self.state.config.worktree_enabled;
         let tmux_ops = Arc::clone(&self.state.tmux_ops);
         let git_ops = Arc::clone(&self.state.git_ops);
         let agent_ops = self.state.agent_registry.get(&planning_agent);
@@ -3752,7 +3753,7 @@ impl App {
                 &mut tmp_task, &project_path, &project_name, &prompt,
                 copy_files, init_script, &plugin, &planning_agent_clone, &all_agents,
                 tmux_ops.as_ref(), git_ops.as_ref(), agent_ops.as_ref(),
-                &referenced_tasks,
+                &referenced_tasks, worktree_enabled,
             );
 
             match result {
@@ -3975,6 +3976,7 @@ impl App {
         let project_name = self.state.project_name.clone();
         let copy_files = self.state.config.copy_files.clone();
         let init_script = self.state.config.init_script.clone();
+        let worktree_enabled = self.state.config.worktree_enabled;
 
         let tmux_ops = Arc::clone(&self.state.tmux_ops);
         let git_ops = Arc::clone(&self.state.git_ops);
@@ -4010,6 +4012,7 @@ impl App {
                 git_ops.as_ref(),
                 agent_ops.as_ref(),
                 &[],
+                worktree_enabled,
             );
 
             match result {
@@ -4126,6 +4129,7 @@ impl App {
         let project_name = self.state.project_name.clone();
         let copy_files = self.state.config.copy_files.clone();
         let init_script = self.state.config.init_script.clone();
+        let worktree_enabled = self.state.config.worktree_enabled;
         let tmux_ops = Arc::clone(&self.state.tmux_ops);
         let git_ops = Arc::clone(&self.state.git_ops);
         let agent_ops = self.state.agent_registry.get(&running_agent);
@@ -4156,6 +4160,7 @@ impl App {
                 git_ops.as_ref(),
                 agent_ops.as_ref(),
                 &[],
+                worktree_enabled,
             );
 
             match result {
@@ -5336,23 +5341,28 @@ fn setup_task_worktree(
     git_ops: &dyn GitOperations,
     agent_ops: &dyn AgentOperations,
     referenced_tasks: &[ReferencedTaskInfo],
+    worktree_enabled: bool,
 ) -> Result<String> {
     let unique_slug = generate_task_slug(&task.id, &task.title);
     let window_name = format!("task-{}", unique_slug);
     let target = format!("{}:{}", project_name, window_name);
 
-    // Create git worktree from main branch
-    let worktree_path_str = match git_ops.create_worktree(project_path, &unique_slug) {
-        Ok(path) => path,
-        Err(e) => {
-            eprintln!("Failed to create worktree: {}", e);
-            project_path.join(".agtx").join("worktrees").join(&unique_slug)
-                .to_string_lossy().to_string()
-        }
+    // Create git worktree from main branch (skipped when use_worktrees=false)
+    let (worktree_path_str, use_real_worktree) = if worktree_enabled {
+        let path = match git_ops.create_worktree(project_path, &unique_slug) {
+            Ok(path) => path,
+            Err(e) => {
+                eprintln!("Failed to create worktree: {}", e);
+                project_path.join(".agtx").join("worktrees").join(&unique_slug)
+                    .to_string_lossy().to_string()
+            }
+        };
+        (path, true)
+    } else {
+        (project_path.to_string_lossy().to_string(), false)
     };
 
-    // Initialize worktree: copy files and run init script
-    // Merge plugin-level copy_files with project-level copy_files
+    // Initialize worktree: copy files and run init script (skipped when use_worktrees=false)
     let worktree_path = Path::new(&worktree_path_str);
     let copy_dirs = plugin.as_ref().map_or_else(Vec::new, |p| p.copy_dirs.clone());
     let merged_copy_files = {
@@ -5375,15 +5385,23 @@ fn setup_task_worktree(
             .replace("{task_id}", &crate::skills::shell_escape(&task.id))
             .replace("{external_id}", &crate::skills::shell_escape(task.external_id.as_deref().unwrap_or("")))
     });
-    let init_warnings = git_ops.initialize_worktree(
-        project_path,
-        worktree_path,
-        merged_copy_files,
-        init_script_expanded,
-        copy_dirs,
-    );
-    // Warnings from copy_files are expected (e.g. files don't exist yet on first run)
-    let _ = &init_warnings;
+    if use_real_worktree {
+        let init_warnings = git_ops.initialize_worktree(
+            project_path,
+            worktree_path,
+            merged_copy_files,
+            init_script_expanded,
+            copy_dirs,
+        );
+        // Warnings from copy_files are expected (e.g. files don't exist yet on first run)
+        let _ = &init_warnings;
+    } else if let Some(script) = init_script_expanded {
+        // No worktree: run init_script in project root only
+        let _ = std::process::Command::new("sh")
+            .arg("-c").arg(&script)
+            .current_dir(project_path)
+            .output();
+    }
 
     // Write skills to worktree .agtx/skills/ and agent-native discovery paths
     // Deploy for all unique agents configured across phases
@@ -5480,7 +5498,7 @@ fn setup_task_worktree(
     )?;
 
     task.session_name = Some(target.clone());
-    task.worktree_path = Some(worktree_path_str);
+    task.worktree_path = if use_real_worktree { Some(worktree_path_str) } else { None };
     task.branch_name = Some(format!("task/{}", unique_slug));
 
     Ok(target)
