@@ -1956,7 +1956,7 @@ impl App {
             frame.render_widget(preview, preview_area);
         }
 
-        // Agent footer
+        // Agent footer (+ optional external_id on left)
         if footer_height > 0 {
             let footer_area = Rect {
                 x: inner.x,
@@ -1971,6 +1971,13 @@ impl App {
                 "codex" => Style::default().fg(Color::White).bg(Color::Rgb(20, 20, 20)),   // white on black
                 _ => Style::default().fg(Color::White),
             };
+            let dimmed_color = hex_to_color(&theme.color_dimmed);
+            // Show external_id (if set) on the left, agent on the right
+            if let Some(ref ext_id) = task.external_id {
+                let ext_label = Paragraph::new(format!(" {} ", ext_id))
+                    .style(Style::default().fg(dimmed_color));
+                frame.render_widget(ext_label, footer_area);
+            }
             let agent_label = Paragraph::new(format!(" {} ", task.agent))
                 .style(agent_style)
                 .alignment(Alignment::Right);
