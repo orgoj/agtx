@@ -4910,8 +4910,13 @@ impl App {
                     }
                 });
 
+                // Effective artifact base: worktree path if set, else project root (no-worktree mode)
+                let effective_base: Option<String> = worktree_path.clone()
+                    .or_else(|| project_path.as_ref().map(|p| p.to_string_lossy().into_owned()));
+
                 let phase_status = if status == TaskStatus::Backlog {
-                    // Preresearch copy-back
+                    // Preresearch copy-back (only when worktree exists — in no-worktree mode files
+                    // are already in the project root, nothing to copy back)
                     if let (Some(ref wt), Some(ref pp)) = (&worktree_path, &project_path) {
                         if let Some(ref p) = plugin {
                             if let Some(entries) = p.copy_back.get("preresearch") {
@@ -4933,12 +4938,12 @@ impl App {
                         }
                     }
 
-                    let found = worktree_path.as_ref().map_or(false, |wt| {
-                        research_artifact_exists(wt, &task_id, plugin)
+                    let found = effective_base.as_deref().map_or(false, |base| {
+                        research_artifact_exists(base, &task_id, plugin)
                     });
                     if found { PhaseStatus::Ready } else { PhaseStatus::Working }
-                } else if let Some(ref wt) = worktree_path {
-                    if phase_artifact_exists(wt, status, plugin, cycle) {
+                } else if let Some(ref base) = effective_base {
+                    if phase_artifact_exists(base, status, plugin, cycle) {
                         PhaseStatus::Ready
                     } else {
                         PhaseStatus::Working
