@@ -5307,11 +5307,17 @@ fn setup_task_worktree(
         }
         if parts.is_empty() { None } else { Some(parts.join(",")) }
     };
+    let task_content = task.content_text();
+    let init_script_expanded = init_script.map(|s| {
+        s.replace("{task}", &crate::skills::shell_escape(&task_content))
+            .replace("{task_id}", &crate::skills::shell_escape(&task.id))
+            .replace("{external_id}", &crate::skills::shell_escape(""))
+    });
     let init_warnings = git_ops.initialize_worktree(
         project_path,
         worktree_path,
         merged_copy_files,
-        init_script,
+        init_script_expanded,
         copy_dirs,
     );
     // Warnings from copy_files are expected (e.g. files don't exist yet on first run)
@@ -5360,10 +5366,16 @@ fn setup_task_worktree(
     }
 
     // Run plugin init_script (in addition to project init_script)
-    // Supports {agent} placeholder for agent-specific initialization
+    // Supports {agent}, {task}, {task_id}, {external_id} placeholders
+    // task/task_id/external_id values are shell-escaped to prevent injection
     if let Some(ref p) = plugin {
         if let Some(ref script) = p.init_script {
-            let script = script.replace("{agent}", agent_name);
+            let task_content = task.content_text();
+            let script = script
+                .replace("{agent}", agent_name)
+                .replace("{task}", &crate::skills::shell_escape(&task_content))
+                .replace("{task_id}", &crate::skills::shell_escape(&task.id))
+                .replace("{external_id}", &crate::skills::shell_escape(""));
             let output = std::process::Command::new("sh")
                 .arg("-c").arg(&script)
                 .current_dir(&worktree_path_str)
@@ -6009,6 +6021,7 @@ fn resolve_prompt(plugin: &Option<WorkflowPlugin>, phase: &str, task_content: &s
     template
         .replace("{task}", task_content)
         .replace("{task_id}", task_id)
+        .replace("{external_id}", "")
         .replace("{phase}", &cycle.to_string())
 }
 
@@ -6042,7 +6055,9 @@ fn resolve_skill_command(plugin: &Option<WorkflowPlugin>, phase: &str, agent_nam
         let task_oneline = task_content.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ");
         cmd.replace("{task}", &task_oneline)
     };
-    let expanded = expanded.replace("{phase}", &cycle.to_string());
+    let expanded = expanded
+        .replace("{external_id}", "")
+        .replace("{phase}", &cycle.to_string());
     skills::transform_plugin_command(&expanded, agent_name)
 }
 

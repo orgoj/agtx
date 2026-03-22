@@ -28,6 +28,13 @@ pub fn load_bundled_plugin(name: &str) -> Option<crate::config::WorkflowPlugin> 
         .and_then(|(_, _, content)| toml::from_str(content).ok())
 }
 
+/// Shell-escape a string for safe interpolation into shell scripts.
+/// Wraps the value in single quotes and escapes embedded single quotes with `'\''`.
+/// Apply ONLY to values substituted into init_script and done_hook — not to agent prompts or commands.
+pub fn shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
 /// Agent-native command/skill directory paths.
 /// Returns (base_dir_relative_to_worktree, namespace_subdir) or None if agent has no native discovery.
 /// Returns (base_dir_relative_to_worktree, namespace_subdir) or None if agent has no native discovery.
@@ -383,4 +390,39 @@ pub fn scan_agent_skills(agent_name: &str, project_path: &std::path::Path) -> Ve
 
     results.sort_by(|a, b| a.0.cmp(&b.0));
     results
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shell_escape;
+
+    #[test]
+    fn test_shell_escape_simple() {
+        assert_eq!(shell_escape("hello"), "'hello'");
+    }
+
+    #[test]
+    fn test_shell_escape_dangerous_semicolon() {
+        assert_eq!(shell_escape("; rm -rf /"), "'; rm -rf /'");
+    }
+
+    #[test]
+    fn test_shell_escape_backtick_subshell() {
+        assert_eq!(shell_escape("`whoami`"), "'`whoami`'");
+    }
+
+    #[test]
+    fn test_shell_escape_dollar_subshell() {
+        assert_eq!(shell_escape("$(whoami)"), "'$(whoami)'");
+    }
+
+    #[test]
+    fn test_shell_escape_embedded_single_quote() {
+        assert_eq!(shell_escape("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn test_shell_escape_empty() {
+        assert_eq!(shell_escape(""), "''");
+    }
 }
