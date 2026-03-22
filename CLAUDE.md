@@ -96,7 +96,9 @@ Backlog → Planning → Running → Review → Done
 - **Planning**: Creates git worktree at `.agtx/worktrees/{slug}`, copies configured files, runs init script, deploys skills, starts agent in planning mode
 - **Running**: Agent is implementing (sends execute command/prompt)
 - **Review**: Optionally create PR. Tmux window stays open. Can resume to address feedback
-- **Done**: Cleanup worktree + tmux window (branch kept locally)
+- **Done**: Cleanup worktree + tmux window (branch kept locally). Runs plugin `[hooks] done` if configured.
+
+Each task has an optional **`external_id`** field — a free-form string linking the task to an external tracker (e.g. a beads issue ID like `bd-abc`). Set it in the task creation wizard via `Tab` in the Title step. It is available as `{external_id}` in plugin hooks and init scripts, enabling automatic issue closure on Done.
 
 ### Workflow Plugins
 Plugins customize the task lifecycle per phase. A plugin is a TOML file (`plugin.toml`) that defines:
@@ -111,6 +113,12 @@ Plugins customize the task lifecycle per phase. A plugin is a TOML file (`plugin
 - **cyclic**: When true, enables Review → Planning transition with incrementing phase counter
 - **supported_agents**: Agent whitelist (empty = all supported)
 - **auto_dismiss**: Rules to auto-dismiss interactive prompts before sending the task prompt
+- **hooks**: Lifecycle hooks — currently only `done` is supported. Shell command run when a task moves to Done. Supports `{task}`, `{task_id}`, `{external_id}`, and `{agent}` placeholders (values are shell-escaped). Example:
+  ```toml
+  [hooks]
+  done = "br close {external_id} --reason='Completed by {agent}'"
+  ```
+  If `external_id` is empty the placeholder expands to an empty string. Run in the task's working directory (worktree root, or project root when `use_worktrees = false`).
 
 Phase gating is derived from the config: if a phase's command or prompt contains `{task}`, the phase can be entered directly from Backlog. Otherwise, it requires a prior phase artifact. If a phase has no command AND no prompt (e.g. void plugin), it is ungated and can be entered freely. This replaces the old `research_required` flag — all behavior is now inferred from the plugin TOML.
 
@@ -201,6 +209,15 @@ A dedicated Claude Code agent that autonomously manages the kanban board. Enable
 - On startup, if an orchestrator tmux session already exists, it is detected and reconnected; catch-up notifications are created for tasks that completed phases while the TUI was down (deduplicated via `peek_notifications`)
 
 **MCP tools**: `list_tasks`, `get_task` (includes `allowed_actions`), `move_task`, `get_transition_status`, `check_conflicts`, `get_notifications`
+
+### Per-Project Config
+Create `.agtx/config.toml` in the project root to override per-project settings:
+
+```toml
+use_worktrees = false   # Disable isolated git worktrees; all agents share the project root
+```
+
+**`use_worktrees = false`**: When set, agtx skips worktree creation during Planning. All agent sessions work directly in the project's main working tree — useful for projects that cannot be easily checked out into a worktree (e.g. monorepos with complex build state). **Caveat**: agents share the same branch, so concurrent tasks will conflict. The `init_script` runs in the primary working directory (not a worktree), and `{agent}` is the only placeholder guaranteed to be safe to use.
 
 ### Theme Configuration
 Colors configurable via `~/.config/agtx/config.toml`:
