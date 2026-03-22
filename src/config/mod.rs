@@ -209,6 +209,9 @@ pub struct ProjectConfig {
 
     /// Workflow plugin name (e.g. "gsd", "spec-kit")
     pub workflow_plugin: Option<String>,
+
+    /// Override whether to use git worktrees for this project
+    pub use_worktrees: Option<bool>,
 }
 
 impl GlobalConfig {
@@ -345,7 +348,7 @@ impl MergedConfig {
                 running: project_agents.running.or(global.agents.running.clone()),
                 review: project_agents.review.or(global.agents.review.clone()),
             },
-            worktree_enabled: global.worktree.enabled,
+            worktree_enabled: project.use_worktrees.unwrap_or(global.worktree.enabled),
             auto_cleanup: global.worktree.auto_cleanup,
             base_branch: project
                 .base_branch

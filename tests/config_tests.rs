@@ -109,6 +109,7 @@ fn test_merged_config_project_overrides() {
         copy_files: Some(".env, .env.local".to_string()),
         init_script: Some("npm install".to_string()),
         workflow_plugin: None,
+        use_worktrees: None,
     };
 
     let merged = MergedConfig::merge(&global, &project);
@@ -118,6 +119,40 @@ fn test_merged_config_project_overrides() {
     assert_eq!(merged.github_url, Some("https://github.com/user/repo".to_string()));
     assert_eq!(merged.copy_files, Some(".env, .env.local".to_string()));
     assert_eq!(merged.init_script, Some("npm install".to_string()));
+}
+
+// === use_worktrees override tests ===
+
+#[test]
+fn test_use_worktrees_project_override_false() {
+    let global = GlobalConfig::default(); // worktree.enabled defaults to true
+    let project = ProjectConfig {
+        use_worktrees: Some(false),
+        ..Default::default()
+    };
+    let merged = MergedConfig::merge(&global, &project);
+    assert!(!merged.worktree_enabled);
+}
+
+#[test]
+fn test_use_worktrees_project_override_true() {
+    let mut global = GlobalConfig::default();
+    global.worktree.enabled = false;
+    let project = ProjectConfig {
+        use_worktrees: Some(true),
+        ..Default::default()
+    };
+    let merged = MergedConfig::merge(&global, &project);
+    assert!(merged.worktree_enabled);
+}
+
+#[test]
+fn test_use_worktrees_falls_back_to_global() {
+    let mut global = GlobalConfig::default();
+    global.worktree.enabled = false;
+    let project = ProjectConfig::default(); // use_worktrees = None
+    let merged = MergedConfig::merge(&global, &project);
+    assert!(!merged.worktree_enabled);
 }
 
 // === FirstRunAction Tests ===
