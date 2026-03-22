@@ -3973,10 +3973,8 @@ impl App {
             return Ok(true);
         }
 
-        // No PR — check for uncommitted changes
-        let has_uncommitted = task.worktree_path.as_ref().map_or(false, |wt| {
-            self.state.git_ops.has_changes(Path::new(wt))
-        });
+        // No PR — check for uncommitted changes (use project root when no worktree)
+        let has_uncommitted = self.state.git_ops.has_changes(effective_task_path(task, project_path));
         if has_uncommitted {
             self.state.done_confirm_popup = Some(DoneConfirmPopup {
                 task_id: task.id.clone(),
