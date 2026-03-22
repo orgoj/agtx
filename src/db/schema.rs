@@ -117,6 +117,7 @@ impl Database {
         let _ = self.conn.execute("ALTER TABLE tasks ADD COLUMN cycle INTEGER NOT NULL DEFAULT 1", []);
         let _ = self.conn.execute("ALTER TABLE tasks ADD COLUMN referenced_tasks TEXT", []);
         let _ = self.conn.execute("ALTER TABLE tasks ADD COLUMN escalation_note TEXT", []);
+        let _ = self.conn.execute("ALTER TABLE tasks ADD COLUMN external_id TEXT", []);
 
         // MCP transition request queue
         self.conn.execute_batch(
@@ -177,8 +178,8 @@ impl Database {
     pub fn create_task(&self, task: &Task) -> Result<()> {
         self.conn.execute(
             r#"
-            INSERT INTO tasks (id, title, description, status, agent, project_id, session_name, worktree_path, branch_name, pr_number, pr_url, plugin, cycle, referenced_tasks, escalation_note, created_at, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+            INSERT INTO tasks (id, title, description, status, agent, project_id, session_name, worktree_path, branch_name, pr_number, pr_url, plugin, cycle, referenced_tasks, escalation_note, external_id, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
             "#,
             params![
                 task.id,
@@ -196,6 +197,7 @@ impl Database {
                 task.cycle,
                 task.referenced_tasks,
                 task.escalation_note,
+                task.external_id,
                 task.created_at.to_rfc3339(),
                 task.updated_at.to_rfc3339(),
             ],
@@ -220,7 +222,8 @@ impl Database {
                 cycle = ?12,
                 referenced_tasks = ?13,
                 escalation_note = ?14,
-                updated_at = ?15
+                external_id = ?15,
+                updated_at = ?16
             WHERE id = ?1
             "#,
             params![
@@ -238,6 +241,7 @@ impl Database {
                 task.cycle,
                 task.referenced_tasks,
                 task.escalation_note,
+                task.external_id,
                 task.updated_at.to_rfc3339(),
             ],
         )?;
@@ -268,6 +272,7 @@ impl Database {
             cycle: row.get("cycle").unwrap_or(1),
             referenced_tasks: row.get("referenced_tasks").ok().flatten(),
             escalation_note: row.get("escalation_note").ok().flatten(),
+            external_id: row.get("external_id").ok().flatten(),
             created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>("created_at")?)
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .unwrap_or_else(|_| chrono::Utc::now()),

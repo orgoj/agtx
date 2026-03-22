@@ -5311,7 +5311,7 @@ fn setup_task_worktree(
     let init_script_expanded = init_script.map(|s| {
         s.replace("{task}", &crate::skills::shell_escape(&task_content))
             .replace("{task_id}", &crate::skills::shell_escape(&task.id))
-            .replace("{external_id}", &crate::skills::shell_escape(""))
+            .replace("{external_id}", &crate::skills::shell_escape(task.external_id.as_deref().unwrap_or("")))
     });
     let init_warnings = git_ops.initialize_worktree(
         project_path,
@@ -5375,7 +5375,7 @@ fn setup_task_worktree(
                 .replace("{agent}", agent_name)
                 .replace("{task}", &crate::skills::shell_escape(&task_content))
                 .replace("{task_id}", &crate::skills::shell_escape(&task.id))
-                .replace("{external_id}", &crate::skills::shell_escape(""));
+                .replace("{external_id}", &crate::skills::shell_escape(task.external_id.as_deref().unwrap_or("")));
             let output = std::process::Command::new("sh")
                 .arg("-c").arg(&script)
                 .current_dir(&worktree_path_str)

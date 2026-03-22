@@ -103,6 +103,7 @@ struct TaskSummary {
     branch_name: Option<String>,
     pr_url: Option<String>,
     plugin: Option<String>,
+    external_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -120,6 +121,7 @@ struct TaskDetail {
     pr_url: Option<String>,
     plugin: Option<String>,
     cycle: i32,
+    external_id: Option<String>,
     created_at: String,
     updated_at: String,
     /// Actions the orchestrator can take on this task given its current status and plugin rules.
@@ -288,6 +290,7 @@ impl AgtxMcpServer {
                                 branch_name: t.branch_name,
                                 pr_url: t.pr_url,
                                 plugin: t.plugin,
+                                external_id: t.external_id,
                             })
                             .collect();
                         serde_json::to_string_pretty(&summaries).unwrap_or_else(|e| format!("Error serializing: {}", e))
@@ -319,6 +322,7 @@ impl AgtxMcpServer {
                         pr_url: t.pr_url,
                         plugin: t.plugin,
                         cycle: t.cycle,
+                        external_id: t.external_id,
                         created_at: t.created_at.to_rfc3339(),
                         updated_at: t.updated_at.to_rfc3339(),
                         allowed_actions: allowed,
