@@ -3827,7 +3827,7 @@ impl App {
             self.state.pr_creation_rx = Some(rx);
 
             std::thread::spawn(move || {
-                let result = push_changes_to_existing_pr(&task_clone, git_ops.as_ref(), agent_ops.as_ref());
+                let result = push_changes_to_existing_pr(&task_clone, &project_path_clone, git_ops.as_ref(), agent_ops.as_ref());
                 match result {
                     Ok(pr_url) => {
                         if let Ok(db) = crate::db::Database::open_project(&project_path_clone) {
@@ -5592,8 +5592,7 @@ fn create_pr_with_content(
     git_provider_ops: &dyn GitProviderOperations,
     agent_ops: &dyn AgentOperations,
 ) -> Result<(i32, String)> {
-    let worktree = task.worktree_path.as_deref().unwrap_or(".");
-    let worktree_path = Path::new(worktree);
+    let worktree_path = effective_task_path(task, project_path);
 
     // Stage all changes
     git_ops.add_all(worktree_path)?;
@@ -5624,11 +5623,11 @@ fn create_pr_with_content(
 /// Push changes to an existing PR (commit and push only, no PR creation)
 fn push_changes_to_existing_pr(
     task: &Task,
+    project_path: &Path,
     git_ops: &dyn GitOperations,
     agent_ops: &dyn AgentOperations,
 ) -> Result<String> {
-    let worktree = task.worktree_path.as_deref().unwrap_or(".");
-    let worktree_path = Path::new(worktree);
+    let worktree_path = effective_task_path(task, project_path);
 
     // Stage all changes
     git_ops.add_all(worktree_path)?;
@@ -6241,6 +6240,15 @@ fn wait_for_prompt_trigger(tmux_ops: &Arc<dyn TmuxOperations>, target: &str, tri
 /// Void plugin tasks are fully user-managed and never produce stuck notifications.
 fn should_send_stuck_notification(plugin_name: Option<&str>) -> bool {
     plugin_name != Some("void")
+}
+
+/// Returns the effective working directory for a task.
+/// Uses the task's worktree_path when set, falling back to the project root.
+fn effective_task_path<'a>(task: &'a Task, project_path: &'a Path) -> &'a Path {
+    task.worktree_path
+        .as_deref()
+        .map(Path::new)
+        .unwrap_or(project_path)
 }
 
 /// Check if the phase artifact exists for a task in its worktree.
