@@ -257,8 +257,8 @@ struct AppState {
     orchestrator_last_check: Instant,
     // Background session refresh channel (non-blocking phase status polling)
     session_refresh_rx: Option<mpsc::Receiver<SessionRefreshResult>>,
-    // Background done-hook result channel
-    done_hook_rx: Option<mpsc::Receiver<Result<(), String>>>,
+    // Background done-hook result channels (Vec to handle multiple concurrent hooks)
+    done_hook_results: Vec<mpsc::Receiver<Result<(), String>>>,
 }
 
 /// State for confirming move to Done
@@ -573,7 +573,7 @@ impl App {
                 orchestrator_stable_since: None,
                 orchestrator_last_check: Instant::now(),
                 session_refresh_rx: None,
-                done_hook_rx: None,
+                done_hook_results: vec![],
             },
         };
 
@@ -726,7 +726,7 @@ impl App {
                 orchestrator_stable_since: None,
                 orchestrator_last_check: Instant::now(),
                 session_refresh_rx: None,
-                done_hook_rx: None,
+                done_hook_results: vec![],
             },
         })
     }
@@ -771,13 +771,19 @@ impl App {
                 }
             }
 
-            // Check for done-hook completion
-            if let Some(ref rx) = self.state.done_hook_rx {
-                if let Ok(result) = rx.try_recv() {
-                    self.state.done_hook_rx = None;
-                    if let Err(err) = result {
-                        self.state.warning_message = Some((format!("Done hook failed: {}", err), Instant::now()));
+            // Check for done-hook completions (Vec supports multiple concurrent hooks)
+            {
+                let mut hook_errors: Vec<String> = Vec::new();
+                self.state.done_hook_results.retain_mut(|rx| {
+                    match rx.try_recv() {
+                        Ok(Err(err)) => { hook_errors.push(err); false }
+                        Ok(Ok(())) => false,
+                        Err(std::sync::mpsc::TryRecvError::Empty) => true,
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => false,
                     }
+                });
+                for err in hook_errors {
+                    self.state.warning_message = Some((format!("Done hook failed: {}", err), Instant::now()));
                 }
             }
 
@@ -2338,7 +2344,7 @@ impl App {
                 if let Some(plugin) = self.load_task_plugin(&task) {
                     if let Some(ref hook) = plugin.hooks.done {
                         let cwd = effective_task_path(&task, &project_path);
-                        self.state.done_hook_rx = Some(spawn_done_hook(hook, &task, cwd));
+                        self.state.done_hook_results.push(spawn_done_hook(hook, &task, cwd));
                     }
                 }
 
@@ -3984,7 +3990,7 @@ impl App {
         if let Some(plugin) = self.load_task_plugin(task) {
             if let Some(ref hook) = plugin.hooks.done {
                 let cwd = effective_task_path(task, project_path);
-                self.state.done_hook_rx = Some(spawn_done_hook(hook, task, cwd));
+                self.state.done_hook_results.push(spawn_done_hook(hook, task, cwd));
             }
         }
 
