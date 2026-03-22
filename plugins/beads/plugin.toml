@@ -1,0 +1,21 @@
+name = "beads"
+description = "Beads issue tracker workflow"
+init_script = "br sync --import-only 2>/dev/null; br update {external_id} --status=in_progress 2>/dev/null || true"
+copy_files = [".beads/issues.jsonl", ".beads/metadata.json"]
+
+[artifacts]
+planning = ".agtx/plan.md"
+running = ".agtx/execute.md"
+review = ".agtx/review.md"
+
+[commands]
+planning = "/agtx:plan {task}"
+running = "/agtx:execute {task}"
+review = "/agtx:review"
+
+[hooks]
+done = "br close {external_id} --reason='Completed via agtx' 2>/dev/null || true"
+
+[copy_back]
+running = [".beads/issues.jsonl"]
+review = [".beads/issues.jsonl"]

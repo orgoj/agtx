@@ -179,6 +179,11 @@ pub const BUNDLED_PLUGINS: &[(&str, &str, &str)] = &[
         "Superpowers - brainstorming, plans, TDD, subagent-driven development",
         include_str!("../plugins/superpowers/plugin.toml"),
     ),
+    (
+        "beads",
+        "Beads issue tracker workflow",
+        include_str!("../plugins/beads/plugin.toml"),
+    ),
 ];
 
 /// Extract the description from YAML frontmatter.
