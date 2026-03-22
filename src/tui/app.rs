@@ -2972,10 +2972,9 @@ impl App {
                 // Toggle focus between title and external_id fields
                 self.state.wizard_title_focus_ext = !self.state.wizard_title_focus_ext;
                 if self.state.wizard_title_focus_ext {
-                    // Switching to external_id: save title buffer, load external_id
-                    if !self.state.input_buffer.is_empty() || self.state.pending_task_title.is_empty() {
-                        self.state.pending_task_title = self.state.input_buffer.clone();
-                    }
+                    // Switching to external_id: always save current buffer as title
+                    // (including empty string — so clearing title then tabbing is reflected)
+                    self.state.pending_task_title = self.state.input_buffer.clone();
                     self.state.input_buffer = self.state.wizard_external_id.clone();
                     self.state.input_cursor = self.state.input_buffer.len();
                 } else {
@@ -3774,8 +3773,8 @@ impl App {
             let target = task.session_name.clone().unwrap();
             let task_content = task.content_text();
             let planning_phase = determine_phase_variant("planning", task.worktree_path.as_deref(), &task.id, &plugin, task.cycle);
-            let skill_cmd = resolve_skill_command(&plugin, planning_phase, &planning_agent, &task_content, task.cycle);
-            let prompt = resolve_prompt(&plugin, planning_phase, &task_content, &task.id, task.cycle);
+            let skill_cmd = resolve_skill_command(&plugin, planning_phase, &planning_agent, &task_content, task.external_id.as_deref().unwrap_or(""), task.cycle);
+            let prompt = resolve_prompt(&plugin, planning_phase, &task_content, &task.id, task.external_id.as_deref().unwrap_or(""), task.cycle);
             let prompt_trigger = resolve_prompt_trigger(&plugin, planning_phase);
             let auto_dismiss = plugin.as_ref().map_or_else(Vec::new, |p| p.auto_dismiss.clone());
             spawn_send_to_agent(
@@ -3794,8 +3793,8 @@ impl App {
 
         // Create worktree + tmux window from scratch (non-blocking)
         let task_content = task.content_text();
-        let prompt = resolve_prompt(&plugin, "planning", &task_content, &task.id, task.cycle);
-        let skill_cmd = resolve_skill_command(&plugin, "planning", &planning_agent, &task_content, task.cycle);
+        let prompt = resolve_prompt(&plugin, "planning", &task_content, &task.id, task.external_id.as_deref().unwrap_or(""), task.cycle);
+        let skill_cmd = resolve_skill_command(&plugin, "planning", &planning_agent, &task_content, task.external_id.as_deref().unwrap_or(""), task.cycle);
         let prompt_trigger = resolve_prompt_trigger(&plugin, "planning");
         let all_agents = collect_phase_agents(&self.state.config);
         let project_name = self.state.project_name.clone();
@@ -3884,8 +3883,8 @@ impl App {
             let (running_agent, agent_switch) = needs_agent_switch(&self.state.config, task, "running");
             let task_content = task.content_text();
             let run_phase = determine_phase_variant("running", task.worktree_path.as_deref(), &task.id, &plugin, task.cycle);
-            let skill_cmd = resolve_skill_command(&plugin, run_phase, &running_agent, &task_content, task.cycle);
-            let prompt = resolve_prompt(&plugin, run_phase, &task_content, &task.id, task.cycle);
+            let skill_cmd = resolve_skill_command(&plugin, run_phase, &running_agent, &task_content, task.external_id.as_deref().unwrap_or(""), task.cycle);
+            let prompt = resolve_prompt(&plugin, run_phase, &task_content, &task.id, task.external_id.as_deref().unwrap_or(""), task.cycle);
             let prompt_trigger = resolve_prompt_trigger(&plugin, run_phase);
             let auto_dismiss = plugin.as_ref().map_or_else(Vec::new, |p| p.auto_dismiss.clone());
             spawn_send_to_agent(
@@ -3906,8 +3905,8 @@ impl App {
         if let Some(session_name) = &task.session_name {
             let plugin = self.load_task_plugin(task);
             let task_content = task.content_text();
-            let skill_cmd = resolve_skill_command(&plugin, "review", &review_agent, &task_content, task.cycle);
-            let prompt = resolve_prompt(&plugin, "review", &task_content, &task.id, task.cycle);
+            let skill_cmd = resolve_skill_command(&plugin, "review", &review_agent, &task_content, task.external_id.as_deref().unwrap_or(""), task.cycle);
+            let prompt = resolve_prompt(&plugin, "review", &task_content, &task.id, task.external_id.as_deref().unwrap_or(""), task.cycle);
             let prompt_trigger = resolve_prompt_trigger(&plugin, "review");
             let auto_dismiss = plugin.as_ref().map_or_else(Vec::new, |p| p.auto_dismiss.clone());
             spawn_send_to_agent(
@@ -4068,6 +4067,7 @@ impl App {
 
         let task_id = task.id.clone();
         let task_title = task.title.clone();
+        let task_external_id = task.external_id.clone().unwrap_or_default();
         let task_cycle = task.cycle;
         let auto_dismiss = plugin.as_ref().map_or_else(Vec::new, |p| p.auto_dismiss.clone());
 
@@ -4114,8 +4114,8 @@ impl App {
                     });
                     let research_phase = if use_preresearch { "preresearch" } else { "research" };
 
-                    let prompt = resolve_prompt(&plugin, research_phase, &task_content, &task_id, task_cycle);
-                    let skill_cmd = resolve_skill_command(&plugin, research_phase, &agent_name, &task_content, task_cycle);
+                    let prompt = resolve_prompt(&plugin, research_phase, &task_content, &task_id, &task_external_id, task_cycle);
+                    let skill_cmd = resolve_skill_command(&plugin, research_phase, &agent_name, &task_content, &task_external_id, task_cycle);
                     let prompt_trigger = resolve_prompt_trigger(&plugin, research_phase);
 
                     let _ = tx.send(SetupResult {
@@ -4207,8 +4207,8 @@ impl App {
         let plugin = self.load_task_plugin(&task);
         let running_agent = self.state.config.agent_for_phase("running").to_string();
         let all_agents = collect_phase_agents(&self.state.config);
-        let prompt = resolve_prompt(&plugin, "running", &task_content, &task.id, task.cycle);
-        let skill_cmd = resolve_skill_command(&plugin, "running", &running_agent, &task_content, task.cycle);
+        let prompt = resolve_prompt(&plugin, "running", &task_content, &task.id, task.external_id.as_deref().unwrap_or(""), task.cycle);
+        let skill_cmd = resolve_skill_command(&plugin, "running", &running_agent, &task_content, task.external_id.as_deref().unwrap_or(""), task.cycle);
         let prompt_trigger = resolve_prompt_trigger(&plugin, "running");
         let project_name = self.state.project_name.clone();
         let copy_files = self.state.config.copy_files.clone();
@@ -4334,8 +4334,8 @@ impl App {
 
                 // Resolve skill command and prompt for the new planning phase
                 let task_content = task.description.as_deref().unwrap_or(&task.title).to_string();
-                let skill_cmd = resolve_skill_command(&plugin, "planning", &planning_agent, &task_content, task.cycle);
-                let prompt = resolve_prompt(&plugin, "planning", &task_content, &task.id, task.cycle);
+                let skill_cmd = resolve_skill_command(&plugin, "planning", &planning_agent, &task_content, task.external_id.as_deref().unwrap_or(""), task.cycle);
+                let prompt = resolve_prompt(&plugin, "planning", &task_content, &task.id, task.external_id.as_deref().unwrap_or(""), task.cycle);
                 let prompt_trigger = resolve_prompt_trigger(&plugin, "planning");
 
                 if let Some(session_name) = &task.session_name {
@@ -4581,9 +4581,9 @@ impl App {
             let plugin = self.load_task_plugin(task);
             let task_content = task.content_text();
             let skill_cmd =
-                resolve_skill_command(&plugin, "review", &review_agent, &task_content, task.cycle);
+                resolve_skill_command(&plugin, "review", &review_agent, &task_content, task.external_id.as_deref().unwrap_or(""), task.cycle);
             let prompt =
-                resolve_prompt(&plugin, "review", &task_content, &task.id, task.cycle);
+                resolve_prompt(&plugin, "review", &task_content, &task.id, task.external_id.as_deref().unwrap_or(""), task.cycle);
             let prompt_trigger = resolve_prompt_trigger(&plugin, "review");
             let auto_dismiss = plugin
                 .as_ref()
@@ -5541,7 +5541,7 @@ fn setup_task_worktree(
         if let Some(ref script) = p.init_script {
             let task_content = task.content_text();
             let script = script
-                .replace("{agent}", agent_name)
+                .replace("{agent}", &crate::skills::shell_escape(agent_name))
                 .replace("{task}", &crate::skills::shell_escape(&task_content))
                 .replace("{task_id}", &crate::skills::shell_escape(&task.id))
                 .replace("{external_id}", &crate::skills::shell_escape(task.external_id.as_deref().unwrap_or("")));
@@ -5569,7 +5569,7 @@ fn setup_task_worktree(
 
     // Build the interactive command. For agents with skill/command support,
     // start with no prompt — the skill command and task content are sent via send_keys.
-    let has_skill_support = resolve_skill_command(plugin, "planning", agent_name, "", task.cycle).is_some();
+    let has_skill_support = resolve_skill_command(plugin, "planning", agent_name, "", task.external_id.as_deref().unwrap_or(""), task.cycle).is_some();
     let agent_cmd = if has_skill_support {
         agent_ops.build_interactive_command("")
     } else {
@@ -6160,7 +6160,7 @@ fn fuzzy_score(haystack: &str, needle: &str) -> i32 {
 
 /// Resolve the task prompt for a given phase transition, using plugin prompt template.
 /// Substitutes {task}, {task_id}, and {phase} placeholders. Returns empty if no template is configured.
-fn resolve_prompt(plugin: &Option<WorkflowPlugin>, phase: &str, task_content: &str, task_id: &str, cycle: i32) -> String {
+fn resolve_prompt(plugin: &Option<WorkflowPlugin>, phase: &str, task_content: &str, task_id: &str, external_id: &str, cycle: i32) -> String {
     let template = match phase {
         "preresearch" | "research" => plugin.as_ref()
             .and_then(|p| p.prompts.research.as_deref())
@@ -6190,13 +6190,13 @@ fn resolve_prompt(plugin: &Option<WorkflowPlugin>, phase: &str, task_content: &s
     template
         .replace("{task}", task_content)
         .replace("{task_id}", task_id)
-        .replace("{external_id}", "")
+        .replace("{external_id}", external_id)
         .replace("{phase}", &cycle.to_string())
 }
 
 /// Resolve the skill command to send via send_keys for a given phase.
 /// Returns the plugin command transformed for the target agent, or None if no command is configured.
-fn resolve_skill_command(plugin: &Option<WorkflowPlugin>, phase: &str, agent_name: &str, task_content: &str, cycle: i32) -> Option<String> {
+fn resolve_skill_command(plugin: &Option<WorkflowPlugin>, phase: &str, agent_name: &str, task_content: &str, external_id: &str, cycle: i32) -> Option<String> {
     let p = plugin.as_ref()?;
 
     // Commands are stored in canonical form (Claude/Gemini syntax) and transformed per agent
@@ -6225,7 +6225,7 @@ fn resolve_skill_command(plugin: &Option<WorkflowPlugin>, phase: &str, agent_nam
         cmd.replace("{task}", &task_oneline)
     };
     let expanded = expanded
-        .replace("{external_id}", "")
+        .replace("{external_id}", external_id)
         .replace("{phase}", &cycle.to_string());
     skills::transform_plugin_command(&expanded, agent_name)
 }
