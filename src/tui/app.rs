@@ -167,6 +167,8 @@ struct AppState {
     // For task creation/editing wizard
     pending_task_title: String,
     editing_task_id: Option<String>, // Some(id) when editing, None when creating
+    wizard_external_id: String,       // Optional external ID (e.g. beads issue ID)
+    wizard_title_focus_ext: bool,     // In title step: false=title focused, true=external_id focused
     wizard_selected_plugin: usize,
     wizard_plugin_options: Vec<PluginOption>,
     wizard_referenced_task_ids: HashSet<String>,
@@ -518,6 +520,8 @@ impl App {
                 input_cursor: 0,
                 pending_task_title: String::new(),
                 editing_task_id: None,
+                wizard_external_id: String::new(),
+                wizard_title_focus_ext: false,
                 wizard_selected_plugin: 0,
                 wizard_plugin_options: vec![],
                 wizard_referenced_task_ids: HashSet::new(),
@@ -669,6 +673,8 @@ impl App {
                 input_cursor: 0,
                 pending_task_title: String::new(),
                 editing_task_id: None,
+                wizard_external_id: String::new(),
+                wizard_title_focus_ext: false,
                 wizard_selected_plugin: 0,
                 wizard_plugin_options: vec![],
                 wizard_referenced_task_ids: HashSet::new(),
@@ -1141,12 +1147,38 @@ impl App {
                     let (before_cursor, after_cursor) = state.input_buffer.split_at(
                         state.input_cursor.min(state.input_buffer.len())
                     );
-                    lines.push(Line::from(vec![
-                        Span::styled("  Title: ", Style::default().fg(selected_color).add_modifier(Modifier::BOLD)),
-                        Span::styled(before_cursor, Style::default().fg(text_color)),
-                        Span::styled("█", Style::default().fg(selected_color)),
-                        Span::styled(after_cursor, Style::default().fg(text_color)),
-                    ]));
+                    if state.wizard_title_focus_ext {
+                        // Title is committed, shown as context
+                        lines.push(Line::from(vec![
+                            Span::styled("  Title: ", Style::default().fg(dimmed_color)),
+                            Span::styled(&state.pending_task_title, Style::default().fg(text_color)),
+                        ]));
+                        lines.push(Line::from(""));
+                        lines.push(Line::from(vec![
+                            Span::styled("  External ID: ", Style::default().fg(selected_color).add_modifier(Modifier::BOLD)),
+                            Span::styled(before_cursor, Style::default().fg(text_color)),
+                            Span::styled("█", Style::default().fg(selected_color)),
+                            Span::styled(after_cursor, Style::default().fg(text_color)),
+                        ]));
+                        lines.push(Line::from(Span::styled(
+                            "  (optional — e.g. bd-abc)  [Tab] switch  [Enter] next",
+                            Style::default().fg(dimmed_color),
+                        )));
+                    } else {
+                        lines.push(Line::from(vec![
+                            Span::styled("  Title: ", Style::default().fg(selected_color).add_modifier(Modifier::BOLD)),
+                            Span::styled(before_cursor, Style::default().fg(text_color)),
+                            Span::styled("█", Style::default().fg(selected_color)),
+                            Span::styled(after_cursor, Style::default().fg(text_color)),
+                        ]));
+                        // Show external_id field as inactive (dimmed) below
+                        let ext_label = if state.wizard_external_id.is_empty() {
+                            "  External ID: (optional)  [Tab] to set".to_string()
+                        } else {
+                            format!("  External ID: {}", state.wizard_external_id)
+                        };
+                        lines.push(Line::from(Span::styled(ext_label, Style::default().fg(dimmed_color))));
+                    }
                 }
                 InputMode::SelectPlugin => {
                     let active_plugin = state.config.workflow_plugin.as_deref().unwrap_or("");
@@ -2921,8 +2953,34 @@ impl App {
             KeyCode::Esc => {
                 self.cancel_wizard();
             }
+            KeyCode::Tab => {
+                // Toggle focus between title and external_id fields
+                self.state.wizard_title_focus_ext = !self.state.wizard_title_focus_ext;
+                if self.state.wizard_title_focus_ext {
+                    // Switching to external_id: save title buffer, load external_id
+                    if !self.state.input_buffer.is_empty() || self.state.pending_task_title.is_empty() {
+                        self.state.pending_task_title = self.state.input_buffer.clone();
+                    }
+                    self.state.input_buffer = self.state.wizard_external_id.clone();
+                    self.state.input_cursor = self.state.input_buffer.len();
+                } else {
+                    // Switching to title: save external_id buffer, load title
+                    self.state.wizard_external_id = self.state.input_buffer.clone();
+                    self.state.input_buffer = self.state.pending_task_title.clone();
+                    self.state.input_cursor = self.state.input_buffer.len();
+                }
+            }
             KeyCode::Enter => {
-                if !self.state.input_buffer.is_empty() {
+                if self.state.wizard_title_focus_ext {
+                    // Save external_id and advance
+                    self.state.wizard_external_id = self.state.input_buffer.clone();
+                    if !self.state.pending_task_title.is_empty() {
+                        self.state.input_buffer.clear();
+                        self.state.input_cursor = 0;
+                        self.state.wizard_title_focus_ext = false;
+                        self.advance_from_title();
+                    }
+                } else if !self.state.input_buffer.is_empty() {
                     self.state.pending_task_title = self.state.input_buffer.clone();
                     self.state.input_buffer.clear();
                     self.state.input_cursor = 0;
@@ -3401,6 +3459,12 @@ impl App {
                 Some(self.state.wizard_referenced_task_ids.iter().cloned().collect::<Vec<_>>().join(","))
             };
 
+            let external_id = if self.state.wizard_external_id.is_empty() {
+                None
+            } else {
+                Some(self.state.wizard_external_id.clone())
+            };
+
             if let Some(task_id) = &self.state.editing_task_id {
                 // Editing existing task
                 if let Some(mut task) = db.get_task(task_id)? {
@@ -3410,6 +3474,7 @@ impl App {
                     } else {
                         Some(self.state.input_buffer.clone())
                     };
+                    task.external_id = external_id;
                     task.agent = agent;
                     task.plugin = plugin;
                     task.referenced_tasks = refs;
@@ -3424,6 +3489,7 @@ impl App {
                 if !self.state.input_buffer.is_empty() {
                     task.description = Some(self.state.input_buffer.clone());
                 }
+                task.external_id = external_id;
                 task.plugin = plugin;
                 task.referenced_tasks = refs;
                 // Task starts in Backlog without tmux window
@@ -3480,6 +3546,8 @@ impl App {
             if let Some(db) = &self.state.db {
                 if let Ok(Some(task)) = db.get_task(task_id) {
                     self.state.input_buffer = task.description.unwrap_or_default();
+                    // Restore external_id if editing
+                    self.state.wizard_external_id = task.external_id.unwrap_or_default();
                     // Restore referenced task IDs if editing
                     self.state.wizard_referenced_task_ids = task.referenced_tasks
                         .as_deref()
@@ -3503,6 +3571,8 @@ impl App {
         self.state.input_cursor = 0;
         self.state.pending_task_title.clear();
         self.state.editing_task_id = None;
+        self.state.wizard_external_id.clear();
+        self.state.wizard_title_focus_ext = false;
         self.state.highlighted_references.clear();
         self.state.wizard_plugin_options.clear();
         self.state.wizard_referenced_task_ids.clear();
