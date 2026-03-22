@@ -1,1 +1,5 @@
 allow-read ~/projects/beads_rust
+
+allow cargo *
+allow git add *
+allow git commit *
